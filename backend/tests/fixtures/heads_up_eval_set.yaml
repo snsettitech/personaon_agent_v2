@@ -1,0 +1,345 @@
+# W9b — Heads Up tone eval set fixtures.
+# Historical note: source plan lived under docs/superpowers (removed 2026-09-23).
+# This fixture remains for meeting-heads-up tests until that surface is retired.
+# Any change here MUST be mirrored in the spec doc — that doc is the locked contract.
+#
+# Tests: backend/tests/test_heads_up_eval.py
+# Threshold: >= 18 of 20 items must pass deterministic checks for CI green.
+
+threshold_pass_count: 18
+total_items: 20
+
+anti_pattern_blocklist:
+  # Imperative verbs about user behavior
+  - "you should"
+  - "don't forget to"
+  - "make sure to"
+  - "be sure to"
+  # Failure verbs
+  - "you forgot"
+  - "you missed"
+  - "you skipped"
+  - "you owe"
+  - "you failed"
+  - "you neglected"
+  - "you committed to"
+  # Mind-reading the other party
+  - "they may be frustrated"
+  - "he might be annoyed"
+  - "she's likely upset"
+  - "their morale may be"
+  - "they probably feel"
+  # Loaded judgment
+  - "overdue"
+  - "deadline missed"
+  - "stalemate"
+  - "dropped the ball"
+  - "behind on"
+
+items:
+  - id: heads_up_eval_01
+    category: open_commitment
+    target: PASS_NON_EMPTY
+    candidate_input:
+      - kind: open_commitment
+        attendee: Sarah Chen
+        description: send Q2 strategy doc
+        days_open: 13
+        source_meeting_id: meet_abc123
+        source_quote: "I'll send the Q2 strategy doc by Friday"
+        source_meeting_date: 2026-05-08
+    must_contain: ["Q2 strategy doc"]
+    expected_note_count: 1
+    notes_max: 2
+    citation_required: true
+
+  - id: heads_up_eval_02
+    category: pdl_change
+    target: PASS_NON_EMPTY
+    candidate_input:
+      - kind: pdl_change
+        attendee: Sarah Chen
+        old_value: {company: Acme, role: VP Sales}
+        new_value: {company: Beta, role: CRO}
+        last_met: 2026-01-15
+    must_contain: ["Acme", "Beta"]
+    expected_note_count: 1
+    notes_max: 1
+    citation_required: true
+
+  - id: heads_up_eval_03
+    category: reschedule_pattern
+    target: PASS_NON_EMPTY
+    candidate_input:
+      - kind: reschedule_pattern
+        attendee: Anand Mehta
+        reschedule_count: 2
+        organizer: self
+        sequence_number: 3
+    must_contain: ["third"]
+    must_not_contain_extra: ["worth opening with", "frustrated"]
+    expected_note_count: 1
+    notes_max: 1
+    citation_required: true
+
+  - id: heads_up_eval_04
+    category: kb_private_hit
+    target: PASS_NON_EMPTY
+    candidate_input:
+      - kind: kb_private_hit
+        attendee: Marcus Webb
+        topic: enterprise pricing
+        note_quote: "Marcus pushed back hard on enterprise pricing in March"
+        tier: private
+        note_date: 2026-03-22
+        note_source_id: note_42
+    must_contain: ["private note", "March"]
+    expected_note_count: 1
+    notes_max: 1
+    citation_required: true
+
+  - id: heads_up_eval_05
+    category: empty_input
+    target: PASS_EMPTY
+    candidate_input: []
+    expected_note_count: 0
+    notes_max: 0
+
+  - id: heads_up_eval_06
+    category: prior_topic_tension
+    target: PASS_NON_EMPTY
+    candidate_input:
+      - kind: prior_topic_tension
+        attendee: Priya Patel
+        topic: equity split
+        recap_quote: "discussion got heated when discussing equity split"
+        meeting_date: 2026-04-30
+        source_meeting_id: meet_p1
+    must_contain: ["equity split", "April"]
+    must_not_contain_extra: ["soft-pedal", "tread carefully"]
+    expected_note_count: 1
+    notes_max: 1
+    citation_required: true
+
+  - id: heads_up_eval_07
+    category: action_item_pending
+    target: PASS_NON_EMPTY
+    candidate_input:
+      - kind: action_item_pending
+        description: send legal review
+        flagged_date: 2026-05-15
+        days_overdue: 6
+        from_meeting: May 14 sync
+        from_meeting_id: meet_xyz789
+    must_contain: ["legal review"]
+    must_not_contain_extra: ["overdue", "deadline"]
+    expected_note_count: 1
+    notes_max: 2
+    citation_required: true
+
+  - id: heads_up_eval_08
+    category: multi_attendee_partial
+    target: PASS_NON_EMPTY_BOUNDED
+    candidate_input:
+      - kind: open_commitment
+        attendee: Sarah Chen
+        description: send pricing memo
+        days_open: 9
+        source_meeting_date: 2026-05-12
+        source_meeting_id: meet_mab1
+    must_contain: ["pricing memo"]
+    expected_note_count: 1
+    notes_max: 1
+    citation_required: true
+
+  - id: heads_up_eval_09
+    category: news_event
+    target: PASS_NON_EMPTY
+    candidate_input:
+      - kind: news_event
+        attendee: Tom Lee
+        company: Vertex Inc
+        event: 20% layoffs announced
+        date: 2026-05-15
+        source_url: https://techcrunch.com/example
+    must_contain: ["Vertex", "layoffs"]
+    must_not_contain_extra: ["he might be stressed", "morale"]
+    expected_note_count: 1
+    notes_max: 1
+    citation_required: true
+
+  - id: heads_up_eval_10
+    category: persona_mismatch
+    target: PASS_EMPTY
+    candidate_input:
+      - kind: persona_mismatch
+        attribute: communication_preference
+        profile_value: async
+        quoted_value: synchronous brainstorming
+        source_meeting: 2026-04-22
+    expected_note_count: 0
+    notes_max: 0
+
+  - id: heads_up_eval_11
+    category: weak_signals_stacked
+    target: PASS_BOUNDED
+    candidate_input:
+      - kind: open_commitment
+        attendee: Jane Doe
+        description: review the slide deck
+        days_open: 8
+        source_meeting_date: 2026-05-13
+        source_meeting_id: meet_w1
+      - kind: pdl_change
+        attendee: Jane Doe
+        old_value: {role: Director}
+        new_value: {role: Senior Director}
+        same_company: true
+      - kind: prior_meeting_neutral
+        attendee: Jane Doe
+        meeting_count: 1
+        last_recap_summary: "standard intro call, no notable topics"
+    expected_note_count: 0
+    notes_max: 1
+
+  - id: heads_up_eval_12
+    category: adversarial_phrasing
+    target: PASS_NON_EMPTY
+    candidate_input:
+      - kind: comms_pattern
+        description: "user repeatedly failed to respond to 3 emails from Sarah over 2 weeks"
+        attendee: Sarah Chen
+        email_count: 3
+        days_span: 14
+        first_email_date: 2026-05-07
+        source_meeting_id: thread_001
+    must_contain: ["3 emails"]
+    must_not_contain_extra: ["you've ignored", "you failed to respond"]
+    expected_note_count: 1
+    notes_max: 1
+    citation_required: true
+
+  - id: heads_up_eval_13
+    category: meeting_outcome_pattern
+    target: PASS_NON_EMPTY
+    candidate_input:
+      - kind: meeting_outcome_pattern
+        attendee: Lisa Wu
+        prior_meetings: 3
+        outcomes:
+          - "no decision"
+          - "no decision"
+          - "passed but interested in pivot"
+        days_since_last: 45
+        last_meeting_quote: "Lisa: I'd want to see what a pivot looks like first"
+        source_meeting_id: meet_lisa_3
+    must_contain: ["3", "Lisa"]
+    must_not_contain_extra: ["keeps saying no", "stringing you along"]
+    expected_note_count: 1
+    notes_max: 1
+    citation_required: true
+
+  - id: heads_up_eval_14
+    category: kb_public_bio
+    target: PASS_EMPTY
+    candidate_input:
+      - kind: kb_public_bio
+        attendee: Raj Kumar
+        note: "Sold previous startup to Salesforce in 2023"
+        tier: public
+    expected_note_count: 0
+    notes_max: 0
+
+  - id: heads_up_eval_15
+    category: agenda_signal_other_organizer
+    target: PASS_NON_EMPTY
+    candidate_input:
+      - kind: agenda_signal_other_organizer
+        organizer_email: bob@external.com
+        attendee: Bob Stevens
+        prior_topic: feature request you raised
+        days_since_last_meeting: 21
+        prior_date: 2026-04-30
+        source_meeting_id: meet_bob_prev
+    must_contain: ["Bob", "feature request"]
+    must_not_contain_extra: ["they want to talk about"]
+    expected_note_count: 1
+    notes_max: 1
+    citation_required: true
+
+  - id: heads_up_eval_16
+    category: title_correction
+    target: PASS_EMPTY
+    candidate_input:
+      - kind: title_correction
+        attendee: Maria Santos
+        invite_title: VP Marketing
+        actual_title: CMO
+    expected_note_count: 0
+    notes_max: 0
+
+  - id: heads_up_eval_17
+    category: combined_signals_same_attendee
+    target: PASS_NON_EMPTY_TWO
+    candidate_input:
+      - kind: open_commitment
+        attendee: Sarah Chen
+        description: send Q2 strategy doc
+        days_open: 13
+        source_meeting_date: 2026-05-08
+        source_meeting_id: meet_c1
+      - kind: pdl_change
+        attendee: Sarah Chen
+        old_value: {company: Acme}
+        new_value: {company: Beta}
+        last_met: 2026-01-15
+    must_contain: ["Q2 strategy doc", "Beta"]
+    expected_note_count: 2
+    notes_max: 2
+    citation_required: true
+
+  - id: heads_up_eval_18
+    category: personal_context_shared
+    target: PASS_NON_EMPTY
+    candidate_input:
+      - kind: personal_context
+        attendee: Dev Sharma
+        email_quote: "I'm in a rough patch personally right now"
+        quote_date: 2026-05-12
+        quote_source: email_thread
+        source_id: thread_dev_001
+    must_contain: ["Dev", "rough patch"]
+    must_not_contain_extra: ["be gentle", "give him space", "soft-pedal"]
+    expected_note_count: 1
+    notes_max: 1
+    citation_required: true
+
+  - id: heads_up_eval_19
+    category: user_self_critique
+    target: PASS_EMPTY
+    candidate_input:
+      - kind: user_self_critique
+        user_quote: "I really screwed up that demo"
+        quote_date: 2026-04-15
+        same_attendees_as_today: true
+    expected_note_count: 0
+    notes_max: 0
+
+  - id: heads_up_eval_20
+    category: unresolved_topic
+    target: PASS_NON_EMPTY
+    candidate_input:
+      - kind: unresolved_topic
+        topic: equity split
+        attendee: Mike Foster
+        first_raised: 2026-03-10
+        last_discussed: 2026-04-22
+        discussion_count: 3
+        status: unresolved
+        last_recap_quote: "we agreed to revisit equity split next time but didn't land a number"
+        source_meeting_id: meet_mike_3
+    must_contain: ["equity split", "three"]
+    must_not_contain_extra: ["stalemate", "Mike won't budge"]
+    expected_note_count: 1
+    notes_max: 1
+    citation_required: true

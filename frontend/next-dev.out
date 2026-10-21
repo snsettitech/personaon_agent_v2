@@ -1,0 +1,20 @@
+
+> frontend_new@0.1.0 dev
+> next dev
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://172.29.128.1:3000
+- Environments: .env.local
+
+✓ Starting...
+Creating turbopack project { dir: 'D:\\PersonaOn\\frontend', testMode: true }
+✓ Ready in 5.8s
+○ Compiling /onboarding ...
+ GET /onboarding 200 in 8.5s (compile: 6.7s, proxy.ts: 748ms, render: 1020ms)
+ GET /onboarding 200 in 395ms (compile: 19ms, proxy.ts: 13ms, render: 363ms)
+ GET /onboarding 200 in 1503ms (compile: 33ms, proxy.ts: 38ms, render: 1433ms)
+○ Compiling /auth/callback ...
+ GET /auth/callback?code=0310104a-e8d6-4f6d-8330-df2f87347cb6&redirect=%2Fonboarding 307 in 1454ms (compile: 106ms, proxy.ts: 48ms, render: 1300ms)
+[Callback] sync-user: exists needs_onboarding: false
+ GET /onboarding 200 in 189ms (compile: 20ms, proxy.ts: 13ms, render: 156ms)

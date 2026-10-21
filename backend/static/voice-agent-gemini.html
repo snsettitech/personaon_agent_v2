@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1280, height=720">
+  <title>Twin Voice Agent (Gemini Live)</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 1280px;
+      height: 720px;
+      overflow: hidden;
+      background: #0f172a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #f8fafc;
+    }
+
+    .avatar-container {
+      position: relative;
+      width: 160px;
+      height: 160px;
+      margin-bottom: 24px;
+    }
+
+    .avatar-ring {
+      position: absolute;
+      inset: -8px;
+      border-radius: 50%;
+      border: 3px solid #22d3ee;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .avatar-ring.active { opacity: 1; animation: pulse 1.2s ease-in-out infinite; }
+
+    @keyframes pulse {
+      0%,100% { transform: scale(1); opacity: 0.9; }
+      50% { transform: scale(1.08); opacity: 0.5; }
+    }
+
+    .avatar {
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #0891b2, #0d9488);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 56px;
+      font-weight: 600;
+      overflow: hidden;
+    }
+
+    .avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+    .twin-name { font-size: 22px; font-weight: 500; margin-bottom: 6px; }
+    .status-text {
+      font-size: 16px;
+      color: #94a3b8;
+      transition: color 0.2s;
+      min-height: 22px;
+    }
+    .status-text.listening { color: #cbd5e1; }
+    .status-text.thinking  { color: #fbbf24; }
+    .status-text.speaking  { color: #34d399; }
+    .status-text.connecting { color: #60a5fa; }
+    .status-text.error     { color: #f87171; }
+
+    .connection-status {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      font-size: 11px;
+      color: rgba(255,255,255,0.4);
+      font-family: ui-monospace, monospace;
+    }
+
+    .error-log {
+      position: absolute;
+      bottom: 16px;
+      left: 16px;
+      right: 16px;
+      max-height: 120px;
+      overflow-y: auto;
+      font-size: 11px;
+      font-family: ui-monospace, monospace;
+      color: rgba(255,255,255,0.3);
+      padding: 8px;
+      background: rgba(0,0,0,0.3);
+      border-radius: 6px;
+      display: none;
+    }
+    .error-log.visible { display: block; }
+  </style>
+</head>
+<body>
+  <div class="connection-status" id="connectionStatus">connecting</div>
+
+  <div class="avatar-container">
+    <div class="avatar-ring" id="avatarRing"></div>
+    <div class="avatar" id="avatar">AI</div>
+  </div>
+  <div class="twin-name" id="twinName">AI Assistant</div>
+  <div class="status-text connecting" id="statusText">Connecting...</div>
+  <div class="error-log" id="errorLog"></div>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const TWIN_ID = params.get('twin_id') || '';
+const MEETING_ID = params.get('meeting_id') || '';
+const VOICE_NAME = params.get('voice') || 'Kore';
+const API_KEY_TOKEN = params.get('api_key_token') || '';
+
+const BACKEND_HOST = (function() {
+  const h = window.location.hostname;
+  return (h === 'localhost' || h === '127.0.0.1') ? `${h}:8000` : h;
+})();
+const BACKEND_BASE = `${window.location.protocol}//${BACKEND_HOST}`;
+
+const el = {
+  avatar: document.getElementById('avatar'),
+  avatarRing: document.getElementById('avatarRing'),
+  twinName: document.getElementById('twinName'),
+  statusText: document.getElementById('statusText'),
+  connectionStatus: document.getElementById('connectionStatus'),
+  errorLog: document.getElementById('errorLog'),
+};
+
+function setStatus(kind, text) {
+  el.statusText.className = `status-text ${kind}`;
+  el.statusText.textContent = text || kind;
+  el.avatarRing.classList.toggle('active', kind === 'speaking' || kind === 'thinking');
+}
+
+function setConnection(text) {
+  el.connectionStatus.textContent = text;
+  if (text !== lastConnectionStatus) {
+    lastConnectionStatus = text;
+    void logClientEvent('connection_status', { status: text });
+  }
+}
+
+function logError(msg) {
+  console.error('[VoiceAgent]', msg);
+  el.errorLog.classList.add('visible');
+  el.errorLog.textContent = `${new Date().toLocaleTimeString()} ${msg}\n${el.errorLog.textContent}`.slice(0, 2000);
+  void logClientEvent('client_error', { message: String(msg).slice(0, 300) }, 'error');
+}
+
+async function fetchPersonaConfig() {
+  void logClientEvent('persona_config_request');
+  const url = `${BACKEND_BASE}/v2/gemini-live/${TWIN_ID}/persona-config?api_key_token=${encodeURIComponent(API_KEY_TOKEN)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`persona-config ${res.status}`);
+  const body = await res.json();
+  void logClientEvent('persona_config_ok', {
+    status: res.status,
+    has_system_instruction: Boolean(body && body.system_instruction),
+    voice_name: body && body.voice_name ? body.voice_name : '',
+  });
+  return body;
+}
+
+async function fetchEphemeralToken() {
+  void logClientEvent('ephemeral_token_request');
+  const url = `${BACKEND_BASE}/v2/gemini-live/${TWIN_ID}/ephemeral-token?api_key_token=${encodeURIComponent(API_KEY_TOKEN)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`ephemeral-token ${res.status}`);
+  const body = await res.json();
+  void logClientEvent('ephemeral_token_ok', {
+    status: res.status,
+    model: body && body.model ? body.model : '',
+    has_access_token: Boolean(body && body.access_token),
+  });
+  return body;
+}
+
+async function callSearchKnowledge(query, topK) {
+  const url = `${BACKEND_BASE}/v2/gemini-live/${TWIN_ID}/search_knowledge?api_key_token=${encodeURIComponent(API_KEY_TOKEN)}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, top_k: topK || 5 }),
+  });
+  if (!res.ok) throw new Error(`search_knowledge ${res.status}`);
+  return await res.json();
+}
+
+async function logToolCall(toolName, args, resultPreview) {
+  const url = `${BACKEND_BASE}/v2/gemini-live/${TWIN_ID}/log_tool_call?api_key_token=${encodeURIComponent(API_KEY_TOKEN)}`;
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tool_name: toolName,
+        args: args || {},
+        result_preview: String(resultPreview || '').slice(0, 500),
+      }),
+    });
+  } catch (err) {
+    console.warn('[VoiceAgent] log_tool_call failed', err);
+  }
+}
+
+function summarizeError(err) {
+  if (!err) return 'unknown';
+  if (typeof err === 'string') return err.slice(0, 240);
+  if (err && err.message) return String(err.message).slice(0, 240);
+  return String(err).slice(0, 240);
+}
+
+async function logClientEvent(event, details, level) {
+  if (!API_KEY_TOKEN || !TWIN_ID) return;
+  const url = `${BACKEND_BASE}/v2/gemini-live/${TWIN_ID}/log_client_event?api_key_token=${encodeURIComponent(API_KEY_TOKEN)}`;
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: String(event || '').slice(0, 120),
+        level: level || 'info',
+        details: details || {},
+      }),
+    });
+  } catch (err) {
+    console.warn('[VoiceAgent] log_client_event failed', err);
+  }
+}
+
+function float32ToPcm16(float32) {
+  const pcm = new Int16Array(float32.length);
+  for (let i = 0; i < float32.length; i++) {
+    const s = Math.max(-1, Math.min(1, float32[i]));
+    pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  return pcm;
+}
+
+function base64FromInt16(int16) {
+  const bytes = new Uint8Array(int16.buffer);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
+function int16FromBase64(b64) {
+  const bin = atob(b64);
+  const buf = new ArrayBuffer(bin.length);
+  const view = new Uint8Array(buf);
+  for (let i = 0; i < bin.length; i++) view[i] = bin.charCodeAt(i);
+  return new Int16Array(buf);
+}
+
+const CAPTURE_SAMPLE_RATE = 16000;
+const PLAYBACK_SAMPLE_RATE = 24000;
+
+let captureCtx = null;
+let playbackCtx = null;
+let mediaStream = null;
+let processorNode = null;
+let playbackQueue = [];
+let nextPlaybackTime = 0;
+let ws = null;
+let controlSource = null;
+let reconnectTimer = null;
+let isBotSpeaking = false;
+let geminiReady = false;
+let mutedByOwner = false;
+let shuttingDown = false;
+let sessionHandle = null;
+let connectionGeneration = 0;
+let currentModel = 'gemini-2.5-flash-native-audio-preview-12-2025';
+let currentSystemInstruction = '';
+let currentAccessToken = '';
+let currentVoiceName = VOICE_NAME;
+let lastConnectionStatus = '';
+let sentFirstOutboundAudio = false;
+let receivedFirstInboundAudio = false;
+let lastTranscriptText = '';
+let lastTranscriptAt = 0;
+
+async function startAudioCapture(onPcmChunk) {
+  void logClientEvent('capture_start', { sample_rate: CAPTURE_SAMPLE_RATE });
+  mediaStream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      channelCount: 1,
+      sampleRate: CAPTURE_SAMPLE_RATE,
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
+    video: false,
+  });
+
+  captureCtx = new AudioContext({ sampleRate: CAPTURE_SAMPLE_RATE });
+  const source = captureCtx.createMediaStreamSource(mediaStream);
+  processorNode = captureCtx.createScriptProcessor(2048, 1, 1);
+  source.connect(processorNode);
+  processorNode.connect(captureCtx.destination);
+
+  processorNode.onaudioprocess = (ev) => {
+    const float32 = ev.inputBuffer.getChannelData(0);
+    onPcmChunk(float32ToPcm16(float32));
+  };
+
+  void logClientEvent('capture_ready', {
+    track_count: mediaStream.getAudioTracks().length,
+    sample_rate: CAPTURE_SAMPLE_RATE,
+  });
+}
+
+function initPlaybackContext() {
+  playbackCtx = new AudioContext({ sampleRate: PLAYBACK_SAMPLE_RATE });
+  nextPlaybackTime = playbackCtx.currentTime;
+  // Chrome starts AudioContext suspended under autoplay policy.
+  // Headless browsers have no user gesture, so we must resume explicitly.
+  playbackCtx.resume().catch(() => {});
+}
+
+function playPcmChunk(int16) {
+  if (mutedByOwner) return;
+  if (!playbackCtx) initPlaybackContext();
+
+  const float32 = new Float32Array(int16.length);
+  for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
+
+  const buffer = playbackCtx.createBuffer(1, float32.length, PLAYBACK_SAMPLE_RATE);
+  buffer.getChannelData(0).set(float32);
+
+  const source = playbackCtx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(playbackCtx.destination);
+
+  const startAt = Math.max(nextPlaybackTime, playbackCtx.currentTime);
+  source.start(startAt);
+  nextPlaybackTime = startAt + buffer.duration;
+
+  playbackQueue.push(source);
+  source.onended = () => {
+    playbackQueue = playbackQueue.filter((item) => item !== source);
+    if (playbackQueue.length === 0) {
+      isBotSpeaking = false;
+      if (mutedByOwner) {
+        setStatus('listening', 'Muted');
+      } else {
+        setStatus('listening', 'Listening...');
+      }
+    }
+  };
+}
+
+function stopPlayback() {
+  for (const src of playbackQueue) {
+    try { src.stop(); } catch (err) { /* ignore */ }
+  }
+  playbackQueue = [];
+  nextPlaybackTime = playbackCtx ? playbackCtx.currentTime : 0;
+  isBotSpeaking = false;
+}
+
+function sendAudioStreamEnd() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({
+    realtimeInput: {
+      audioStreamEnd: true,
+    },
+  }));
+}
+
+function buildSetupMessage(model, systemInstruction) {
+  return {
+    setup: {
+      model: `models/${model}`,
+      generationConfig: {
+        responseModalities: ['AUDIO'],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: currentVoiceName },
+          },
+        },
+      },
+      systemInstruction: {
+        parts: [{ text: systemInstruction }],
+      },
+      tools: [{
+        functionDeclarations: [{
+          name: 'search_knowledge',
+          description: "Search the user's knowledge base for facts, projects, opinions, or history relevant to the current question. Call this before answering anything substantive.",
+          parameters: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', description: 'A concise search query derived from the question.' },
+              top_k: { type: 'number', description: 'Number of chunks to retrieve (1-10). Default 5.' },
+            },
+            required: ['query'],
+          },
+        }],
+      }],
+      realtimeInputConfig: {
+        automaticActivityDetection: {
+          disabled: false,
+          startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
+          endOfSpeechSensitivity: 'END_SENSITIVITY_HIGH',
+          prefixPaddingMs: 20,
+          silenceDurationMs: 500,
+        },
+      },
+      proactivity: {
+        proactiveAudio: true,
+      },
+      ...(sessionHandle ? { sessionResumption: { handle: sessionHandle } } : {}),
+    },
+  };
+}
+
+function sendRealtimeAudio(pcm16) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (!geminiReady || mutedByOwner || shuttingDown) return;
+  if (!sentFirstOutboundAudio) {
+    sentFirstOutboundAudio = true;
+    void logClientEvent('audio_out_first_chunk', {
+      sample_rate: CAPTURE_SAMPLE_RATE,
+      samples: pcm16.length,
+    });
+  }
+  ws.send(JSON.stringify({
+    realtimeInput: {
+      audio: {
+        mimeType: 'audio/pcm;rate=16000',
+        data: base64FromInt16(pcm16),
+      },
+    },
+  }));
+}
+
+function sendRealtimeText(text, speaker) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (!geminiReady || mutedByOwner || shuttingDown) return;
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return;
+
+  const line = speaker ? `${speaker}: ${trimmed}` : trimmed;
+  ws.send(JSON.stringify({
+    realtimeInput: {
+      text: line,
+    },
+  }));
+}
+
+function shouldSkipTranscript(text, speaker) {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return true;
+
+  const speakerLower = String(speaker || '').toLowerCase();
+  if (speakerLower.includes('ai assistant')) return true;
+
+  const now = Date.now();
+  if (trimmed === lastTranscriptText && (now - lastTranscriptAt) < 4000) {
+    return true;
+  }
+  lastTranscriptText = trimmed;
+  lastTranscriptAt = now;
+  return false;
+}
+
+function handleTranscriptEvent(event) {
+  if (!event) return;
+  const text = event.text || '';
+  const speaker = event.speaker || 'Participant';
+  if (shouldSkipTranscript(text, speaker)) return;
+
+  if (isBotSpeaking) {
+    stopPlayback();
+  }
+  setStatus(mutedByOwner ? 'listening' : 'thinking', mutedByOwner ? 'Muted' : 'Thinking...');
+  sendRealtimeText(text, speaker);
+}
+
+async function handleToolCall(toolCall) {
+  if (!toolCall || !toolCall.functionCalls) return;
+
+  for (const fc of toolCall.functionCalls) {
+    let args = fc.args || {};
+    if (typeof args === 'string') {
+      try {
+        args = JSON.parse(args);
+      } catch (err) {
+        args = {};
+      }
+    }
+
+    const callId = fc.id;
+    const toolName = fc.name;
+    let response = { result: 'error', message: 'unknown tool' };
+
+    if (toolName === 'search_knowledge') {
+      try {
+        const result = await callSearchKnowledge(args.query || '', args.top_k || 5);
+        response = { chunks: result.chunks || [] };
+        void logToolCall(toolName, args, JSON.stringify(response).slice(0, 500));
+      } catch (err) {
+        logError(`search_knowledge failed: ${err.message}`);
+        response = { result: 'error', message: String(err) };
+      }
+    }
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({
+      toolResponse: {
+        functionResponses: [{
+          id: callId,
+          name: toolName,
+          response: response,
+        }],
+      },
+    }));
+  }
+}
+
+function scheduleReconnect(delayMs) {
+  if (shuttingDown) return;
+  if (reconnectTimer) return;
+  setConnection('reconnecting');
+  void logClientEvent('ws_reconnect_scheduled', { delay_ms: delayMs });
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = null;
+    connectGeminiLive();
+  }, delayMs);
+}
+
+function closeControlChannel() {
+  if (controlSource) {
+    controlSource.close();
+    controlSource = null;
+  }
+}
+
+function closeMedia() {
+  if (processorNode) {
+    try { processorNode.disconnect(); } catch (err) { /* ignore */ }
+    processorNode = null;
+  }
+  if (mediaStream) {
+    for (const track of mediaStream.getTracks()) {
+      track.stop();
+    }
+    mediaStream = null;
+  }
+}
+
+function shutdownSession(reason) {
+  if (shuttingDown) return;
+  void logClientEvent('session_shutdown', { reason: reason || 'unknown' });
+  shuttingDown = true;
+  geminiReady = false;
+  mutedByOwner = true;
+  stopPlayback();
+  sendAudioStreamEnd();
+  closeControlChannel();
+  closeMedia();
+  if (captureCtx) {
+    try { captureCtx.close(); } catch (err) { /* ignore */ }
+    captureCtx = null;
+  }
+  if (playbackCtx) {
+    try { playbackCtx.close(); } catch (err) { /* ignore */ }
+    playbackCtx = null;
+  }
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    try { ws.close(1000, reason || 'shutdown'); } catch (err) { /* ignore */ }
+  }
+  ws = null;
+  setConnection('closed');
+  setStatus('listening', reason === 'leave' ? 'Left meeting' : 'Stopped');
+}
+
+function handleControlEvent(event) {
+  const action = event && event.action;
+  if (!action) return;
+
+  if (action === 'mute') {
+    mutedByOwner = true;
+    stopPlayback();
+    sendAudioStreamEnd();
+    setStatus('listening', 'Muted');
+    return;
+  }
+
+  if (action === 'unmute') {
+    mutedByOwner = false;
+    setStatus('listening', 'Listening...');
+    return;
+  }
+
+  if (action === 'leave') {
+    shutdownSession('leave');
+  }
+}
+
+function connectControlChannel() {
+  closeControlChannel();
+  const url = `${BACKEND_BASE}/v2/gemini-live/${TWIN_ID}/${MEETING_ID}/control-channel?api_key_token=${encodeURIComponent(API_KEY_TOKEN)}`;
+  controlSource = new EventSource(url);
+  controlSource.onopen = () => {
+    void logClientEvent('control_channel_open');
+  };
+  controlSource.addEventListener('control', (ev) => {
+    try {
+      handleControlEvent(JSON.parse(ev.data));
+    } catch (err) {
+      logError(`control parse failed: ${err.message}`);
+    }
+  });
+  controlSource.addEventListener('transcript', (ev) => {
+    try {
+      handleTranscriptEvent(JSON.parse(ev.data));
+    } catch (err) {
+      logError(`transcript parse failed: ${err.message}`);
+    }
+  });
+  controlSource.onerror = () => {
+    console.warn('[VoiceAgent] control channel error');
+    void logClientEvent('control_channel_error', {}, 'warning');
+  };
+}
+
+function handleServerMessage(msg) {
+  if (msg.setupComplete) {
+    geminiReady = true;
+    setConnection('connected');
+    void logClientEvent('setup_complete', {
+      model: currentModel,
+      voice: currentVoiceName,
+    }, 'warning');
+    setStatus(mutedByOwner ? 'listening' : 'listening', mutedByOwner ? 'Muted' : 'Listening...');
+    return;
+  }
+
+  if (msg.serverContent) {
+    const serverContent = msg.serverContent;
+
+    if (serverContent.interrupted) {
+      stopPlayback();
+      setStatus(mutedByOwner ? 'listening' : 'listening', mutedByOwner ? 'Muted' : 'Listening...');
+    }
+
+    if (serverContent.modelTurn && serverContent.modelTurn.parts) {
+      for (const part of serverContent.modelTurn.parts) {
+        if (part.inlineData && part.inlineData.data) {
+          const mime = part.inlineData.mimeType || '';
+          if (mime.startsWith('audio/pcm')) {
+            if (!receivedFirstInboundAudio) {
+              receivedFirstInboundAudio = true;
+              void logClientEvent('audio_in_first_chunk', {
+                mime_type: mime,
+                bytes_b64: part.inlineData.data.length,
+              }, 'warning');
+            }
+            if (!mutedByOwner && !isBotSpeaking) {
+              isBotSpeaking = true;
+              setStatus('speaking', 'Speaking...');
+            }
+            playPcmChunk(int16FromBase64(part.inlineData.data));
+          }
+        }
+      }
+    }
+
+    if (serverContent.turnComplete && !isBotSpeaking) {
+      setStatus(mutedByOwner ? 'listening' : 'listening', mutedByOwner ? 'Muted' : 'Listening...');
+    }
+    return;
+  }
+
+  if (msg.toolCall) {
+    void logClientEvent('tool_call_received', {
+      count: Array.isArray(msg.toolCall.functionCalls) ? msg.toolCall.functionCalls.length : 0,
+    });
+    setStatus('thinking', 'Thinking...');
+    void handleToolCall(msg.toolCall);
+    return;
+  }
+
+  if (msg.sessionResumptionUpdate) {
+    if (msg.sessionResumptionUpdate.newHandle) {
+      sessionHandle = msg.sessionResumptionUpdate.newHandle;
+      void logClientEvent('session_handle_updated');
+    }
+    return;
+  }
+
+  if (msg.goAway) {
+    void logClientEvent('ws_go_away');
+    scheduleReconnect(500);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try { ws.close(4000, 'goAway'); } catch (err) { /* ignore */ }
+    }
+  }
+}
+
+function connectGeminiLive() {
+  if (shuttingDown) return;
+  const generation = ++connectionGeneration;
+  geminiReady = false;
+  sentFirstOutboundAudio = false;
+  receivedFirstInboundAudio = false;
+  void logClientEvent('ws_connect_start', {
+    generation,
+    has_session_handle: Boolean(sessionHandle),
+    model: currentModel,
+    voice: currentVoiceName,
+  });
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    try { ws.close(4001, 'superseded'); } catch (err) { /* ignore */ }
+  }
+
+  // auth_tokens/XXXXX ephemeral tokens are passed as ?key= (not ?access_token= which is OAuth2).
+  const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?key=${encodeURIComponent(currentAccessToken)}`;
+  setConnection('connecting');
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = () => {
+    if (generation !== connectionGeneration || !ws) return;
+    void logClientEvent('ws_open', { generation });
+    void logClientEvent('setup_sent', { model: currentModel, voice: currentVoiceName });
+    ws.send(JSON.stringify(buildSetupMessage(currentModel, currentSystemInstruction)));
+  };
+
+  ws.onmessage = async (ev) => {
+    let text = ev.data;
+    if (text instanceof Blob) text = await text.text();
+    try {
+      const msg = JSON.parse(text);
+      handleServerMessage(msg);
+    } catch (err) {
+      logError(`parse error: ${err.message}`);
+    }
+  };
+
+  ws.onerror = () => {
+    logError('ws error');
+    setConnection('error');
+    void logClientEvent('ws_error', { generation }, 'error');
+    setStatus('error', 'Connection error');
+  };
+
+  ws.onclose = (ev) => {
+    if (generation !== connectionGeneration) return;
+    geminiReady = false;
+    setConnection('disconnected');
+    void logClientEvent('ws_close', {
+      generation,
+      code: ev.code,
+      reason: ev.reason || '',
+      clean: Boolean(ev.wasClean),
+    }, ev.code === 1000 || ev.code === 1001 ? 'info' : 'warning');
+    if (!shuttingDown && ev.code !== 1000 && ev.code !== 1001) {
+      scheduleReconnect(2000);
+    }
+  };
+}
+
+async function init() {
+  void logClientEvent('init_start');
+  if (!API_KEY_TOKEN) {
+    setConnection('error');
+    void logClientEvent('init_missing_api_key_token', {}, 'error');
+    setStatus('error', 'Missing api_key_token');
+    return;
+  }
+
+  try {
+    const [persona, tokenResp] = await Promise.all([
+      fetchPersonaConfig(),
+      fetchEphemeralToken(),
+    ]);
+
+    el.twinName.textContent = `${persona.twin_name}'s AI Assistant`;
+    el.avatar.textContent = (persona.twin_name || 'AI')
+      .split(' ')
+      .map((word) => word[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
+
+    currentSystemInstruction = persona.system_instruction;
+    currentModel = tokenResp.model || currentModel;
+    currentAccessToken = tokenResp.access_token;
+    currentVoiceName = persona.voice_name || VOICE_NAME;
+
+    connectControlChannel();
+    initPlaybackContext();
+    connectGeminiLive();
+    try {
+      await startAudioCapture((pcm) => sendRealtimeAudio(pcm));
+    } catch (err) {
+      console.warn('[VoiceAgent] audio capture unavailable, continuing transcript-only', err);
+    }
+  } catch (err) {
+    logError(`init failed: ${err.message}`);
+    setConnection('error');
+    void logClientEvent('init_failed', { message: summarizeError(err) }, 'error');
+    setStatus('error', 'Initialization failed');
+  }
+}
+
+window.addEventListener('beforeunload', () => shutdownSession('unload'));
+window.addEventListener('load', init);
+</script>
+</body>
+</html>

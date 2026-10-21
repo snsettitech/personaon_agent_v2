@@ -1,0 +1,26 @@
+{
+  "greeting": [
+    "hi",
+    "hello",
+    "thanks"
+  ],
+  "identity": [
+    "who are you?",
+    "tell me about yourself"
+  ],
+  "procedural": [
+    "how to use this twin?",
+    "what is the default workflow?"
+  ],
+  "factual": [
+    "what are the non-goals?",
+    "what does this twin optimize for?"
+  ],
+  "evaluative": [
+    "would this twin like a B2B payroll SaaS?",
+    "containers vs serverless for MVP?"
+  ],
+  "insufficient": [
+    "what API endpoint should I call?"
+  ]
+}

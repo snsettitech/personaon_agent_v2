@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>PersonaOn</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 100vw;
+    height: 100vh;
+    background: #0f0f11;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  .avatar {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6c47ff 0%, #a855f7 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: -1px;
+    margin-bottom: 24px;
+    box-shadow: 0 0 0 0 rgba(108, 71, 255, 0.4);
+  }
+
+  .avatar.speaking {
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0   rgba(108, 71, 255, 0.5); }
+    50%  { box-shadow: 0 0 0 18px rgba(108, 71, 255, 0.0); }
+    100% { box-shadow: 0 0 0 0   rgba(108, 71, 255, 0.5); }
+  }
+
+  .name {
+    font-size: 28px;
+    font-weight: 600;
+    color: #f0eeff;
+    letter-spacing: -0.3px;
+    margin-bottom: 8px;
+  }
+
+  .badge {
+    font-size: 13px;
+    font-weight: 500;
+    color: #a78bfa;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  .waveform {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 28px;
+    height: 32px;
+  }
+
+  .bar {
+    width: 4px;
+    border-radius: 2px;
+    background: #6c47ff;
+    height: 6px;
+    opacity: 0.35;
+  }
+
+  .waveform.active .bar {
+    opacity: 1;
+    animation: wave 0.8s ease-in-out infinite;
+  }
+
+  .waveform.active .bar:nth-child(1) { animation-delay: 0.00s; }
+  .waveform.active .bar:nth-child(2) { animation-delay: 0.10s; }
+  .waveform.active .bar:nth-child(3) { animation-delay: 0.20s; }
+  .waveform.active .bar:nth-child(4) { animation-delay: 0.15s; }
+  .waveform.active .bar:nth-child(5) { animation-delay: 0.05s; }
+  .waveform.active .bar:nth-child(6) { animation-delay: 0.25s; }
+  .waveform.active .bar:nth-child(7) { animation-delay: 0.10s; }
+
+  @keyframes wave {
+    0%, 100% { height: 6px; }
+    50%       { height: 24px; }
+  }
+
+  .logo {
+    position: absolute;
+    bottom: 18px;
+    right: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #4a3f6b;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+
+<div class="avatar" id="avatar">?</div>
+<div class="name" id="nameEl">PersonaOn</div>
+<div class="badge">AI Digital Twin</div>
+
+<div class="waveform" id="waveform">
+  <div class="bar"></div>
+  <div class="bar"></div>
+  <div class="bar"></div>
+  <div class="bar"></div>
+  <div class="bar"></div>
+  <div class="bar"></div>
+  <div class="bar"></div>
+</div>
+
+<div class="logo">PersonaOn</div>
+
+<script>
+  const params    = new URLSearchParams(window.location.search);
+  const meetingId = params.get('meeting_id') || '';
+  const twinName  = params.get('twin_name')  || 'PersonaOn';
+
+  document.getElementById('nameEl').textContent = twinName;
+  document.getElementById('avatar').textContent = twinName.trim().charAt(0).toUpperCase();
+
+  const avatar   = document.getElementById('avatar');
+  const waveform = document.getElementById('waveform');
+  let speakingTimer = null;
+
+  function setSpeaking(on) {
+    avatar.classList.toggle('speaking', on);
+    waveform.classList.toggle('active', on);
+  }
+
+  function bumpSpeaking() {
+    setSpeaking(true);
+    clearTimeout(speakingTimer);
+    speakingTimer = setTimeout(() => setSpeaking(false), 800);
+  }
+
+  // Gemini Live output: mono 16-bit LE PCM at 24 kHz.
+  const ctx = new AudioContext({ sampleRate: 24000, latencyHint: 'interactive' });
+  ctx.resume().catch(handleResumeFailed);
+  let nextPlayTime = 0;
+
+  function handleResumeFailed(err) {
+    console.error('[PlayerPage] ctx.resume() rejected — autoplay blocked:', err);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'player_degraded', reason: 'autoplay_blocked' }));
+    }
+  }
+
+  let ws = null;
+  let retryDelay = 1000;
+  const MAX_RETRY = 30000;
+  const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+
+  function connect() {
+    if (!meetingId) {
+      console.error('[PlayerPage] missing meeting_id — not connecting');
+      return;
+    }
+    ws = new WebSocket(`${scheme}//${location.host}/ws/meeting/${meetingId}/audio-out`);
+    ws.binaryType = 'arraybuffer';
+
+    ws.onopen = () => {
+      retryDelay = 1000;   // reset backoff on successful connection
+      nextPlayTime = 0;    // reset scheduling timeline — avoids drift after reconnect
+      ws.send(JSON.stringify({ type: 'player_ready' }));
+    };
+
+    ws.onclose = () => {
+      clearTimeout(speakingTimer);  // cancel pending animation timer before reconnect
+      setSpeaking(false);
+      setTimeout(connect, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, MAX_RETRY);
+    };
+
+    ws.onerror = (err) => {
+      console.error('[PlayerPage] WS error:', err);
+    };
+
+    ws.onmessage = (event) => {
+      // Control frame (JSON string)
+      if (typeof event.data === 'string') {
+        if (!event.data) return;  // empty keepalive ping
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'mute') {
+            ctx.suspend().catch(console.error);
+            setSpeaking(false);
+          } else if (msg.type === 'unmute') {
+            ctx.resume().catch(handleResumeFailed);
+          } else if (msg.type === 'player_degraded') {
+            console.warn('[PlayerPage] server ack player_degraded');
+          }
+        } catch (e) {
+          console.warn('[PlayerPage] non-JSON text frame ignored');
+        }
+        return;
+      }
+
+      // PCM audio frame
+      if (ctx.state !== 'running') ctx.resume().catch(handleResumeFailed);  // safety net before each buffer
+
+      const samples = new Int16Array(event.data);
+      const float32 = new Float32Array(samples.length);
+      for (let i = 0; i < samples.length; i++) float32[i] = samples[i] / 32768;
+
+      const buffer = ctx.createBuffer(1, float32.length, 24000);
+      buffer.copyToChannel(float32, 0);
+
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(ctx.destination);
+
+      const startAt = Math.max(ctx.currentTime, nextPlayTime);
+      src.start(startAt);
+      nextPlayTime = startAt + buffer.duration;
+
+      bumpSpeaking();
+    };
+  }
+
+  connect();
+</script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+# `bun test` runs unit tests only. Everything under tests/ is Playwright
+# (tests/e2e/*.spec.ts plus tests/research-api.test.ts, which imports
+# @playwright/test) and must run through `playwright test`, not bun.
+[test]
+pathIgnorePatterns = ["tests/**", "node_modules/**", ".next/**"]

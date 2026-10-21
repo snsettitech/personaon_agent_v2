@@ -1,0 +1,25 @@
+-- Drop the legacy meetings-uniqueness index now that ical_uid is the
+-- canonical cross-platform key (see 20260613000100_meetings_ical_uid_key.sql).
+--
+-- The legacy index keyed uniqueness on (twin_id, provider, provider_calendar_id,
+-- provider_event_id, provider_event_instance_id). Because Recall.ai assigns a
+-- NEW recall_calendar_id every time a user disconnects+reconnects their
+-- calendar, the same underlying Google/Outlook event would insert a new row
+-- under each Recall calendar id -- which is exactly the duplicate-on-reconnect
+-- bug that ical_uid was introduced to eliminate.
+--
+-- Pre-conditions verified before this migration:
+--   * Backfill complete: every row with provider_event_id IS NOT NULL also has
+--     ical_uid populated (audited via backend/scripts/backfill_meetings_ical_uid.py
+--     -- 7/7 resolved, 0 not-found).
+--   * Dedup complete: 0 groups with duplicates remaining
+--     (backend/scripts/dedup_meetings_by_ical_uid.py).
+--   * Worker writes ical_uid for all newly-synced rows; legacy 5-tuple is
+--     only a fallback for the (now empty) no-ical_uid path.
+--
+-- After this migration the only uniqueness key for calendar-synced meetings
+-- is idx_meetings_ical_uid_unique on (twin_id, ical_uid, instance_id).
+-- Booking-flow and desktop-recording rows (which legitimately have no
+-- ical_uid) remain unconstrained, matching prior behavior for those flows.
+
+DROP INDEX IF EXISTS public.idx_meetings_provider_event_unique;

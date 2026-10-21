@@ -1,0 +1,65 @@
+{
+  "description": "Sample Passport records (PON-7 Approach B) for docs and demos. IDs are fictional; no secrets.",
+  "professional_profile": {
+    "id": "a1000001-0001-4001-8001-000000000001",
+    "tenant_id": "b2000002-0002-4002-8002-000000000002",
+    "twin_id": "c3000003-0003-4003-8003-000000000003",
+    "owner_user_id": "b2000002-0002-4002-8002-000000000002",
+    "status": "draft"
+  },
+  "profile_claims": [
+    {
+      "id": "d4000004-0004-4004-8004-000000000004",
+      "tenant_id": "b2000002-0002-4002-8002-000000000002",
+      "profile_id": "a1000001-0001-4001-8001-000000000001",
+      "claim_type": "headline",
+      "value_json": { "text": "Senior Backend Engineer" },
+      "value_text": "Senior Backend Engineer",
+      "state": "proposed",
+      "confidence": 0.92,
+      "extraction_version": "resume_v1",
+      "fingerprint": "headline:senior-backend-engineer",
+      "created_by": "import"
+    },
+    {
+      "id": "d4000004-0004-4004-8004-000000000005",
+      "tenant_id": "b2000002-0002-4002-8002-000000000002",
+      "profile_id": "a1000001-0001-4001-8001-000000000001",
+      "claim_type": "education",
+      "value_json": {
+        "institution": "Example State University",
+        "degree": "B.S. Computer Science",
+        "end_year": 2020
+      },
+      "value_text": "B.S. Computer Science, Example State University (2020)",
+      "state": "proposed",
+      "confidence": 0.88,
+      "extraction_version": "resume_v1",
+      "fingerprint": "education:example-state-university-bs-cs-2020",
+      "created_by": "import"
+    },
+    {
+      "id": "d4000004-0004-4004-8004-000000000006",
+      "tenant_id": "b2000002-0002-4002-8002-000000000002",
+      "profile_id": "a1000001-0001-4001-8001-000000000001",
+      "claim_type": "skill",
+      "value_json": { "name": "Python" },
+      "value_text": "Python",
+      "state": "proposed",
+      "confidence": 0.85,
+      "extraction_version": "resume_v1",
+      "fingerprint": "skill:python",
+      "created_by": "import"
+    }
+  ],
+  "claim_evidence": [
+    {
+      "id": "e5000005-0005-4005-8005-000000000007",
+      "tenant_id": "b2000002-0002-4002-8002-000000000002",
+      "claim_id": "d4000004-0004-4004-8004-000000000004",
+      "source_id": "f6000006-0006-4006-8006-000000000008",
+      "excerpt": "Professional summary: Senior Backend Engineer with 8+ years building APIs.",
+      "locator": { "page": 1, "section": "summary" }
+    }
+  ]
+}

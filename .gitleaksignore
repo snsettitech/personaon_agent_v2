@@ -1,0 +1,8 @@
+# Reviewed gitleaks false positives, one fingerprint per line
+# (commit:file:rule:line, as printed in the secret-scan log).
+# security-scans.yml only honours the copy on the base branch, so adding a line
+# here takes effect after the PR that adds it is merged.
+
+# Fake GitHub token planted (and removed in the next commit) to prove
+# secret-scan fails; PR #323. Never a real credential.
+99c2d0e466f48672b1b1eb16ca958a94c9dfac06:backend/tests/fixtures/scan_canary.json:github-pat:3

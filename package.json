@@ -1,0 +1,20 @@
+{
+  "name": "personaon",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "bun run dev:backend",
+    "dev:backend": "bash scripts/run-env.sh backend/.env -- bash -lc 'cd backend && PY=${PYTHON_BIN:-}; if [ -z \"$PY\" ]; then if [ -x .venv/bin/python ]; then PY=.venv/bin/python; elif command -v python3 >/dev/null 2>&1; then PY=python3; else PY=python; fi; fi; exec \"$PY\" -m uvicorn main:asgi_app --host 127.0.0.1 --port ${BACKEND_PORT:-8006} --reload'",
+    "db:migrations:validate": "bash scripts/supabase-migrate.sh validate",
+    "db:migrations:list": "bash scripts/supabase-migrate.sh list",
+    "db:migrations:plan": "bash scripts/supabase-migrate.sh plan",
+    "db:migrations:apply": "bash scripts/supabase-migrate.sh apply"
+  },
+  "devDependencies": {
+    "supabase": "^2.101.0"
+  },
+  "engines": {
+    "bun": ">=1.3.0",
+    "node": ">=20"
+  }
+}

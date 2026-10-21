@@ -1,0 +1,6 @@
+Session exchange error: Error [AuthApiError]: invalid flow state, no valid flow state found
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 404,
+  code: 'flow_state_not_found'
+}

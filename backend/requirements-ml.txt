@@ -1,0 +1,12 @@
+# Optional production-safe ML dependencies.
+#
+# This file is tuned for starter-plan stability:
+# - Cohere reranking (remote API)
+# - FlashRank reranking (local ONNX)
+# - HF embeddings via inference API (no local torch model required)
+#
+# To enable *local* sentence-transformers embeddings, additionally install:
+#   requirements-ml-local.txt
+
+flashrank
+cohere

@@ -1,0 +1,40 @@
+# Ruff configuration for PersonaOn backend
+# https://docs.astral.sh/ruff/
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes (unused imports, undefined names)
+    "B",    # flake8-bugbear (common bugs)
+    "T20",  # flake8-print (no print() in source)
+    "UP",   # pyupgrade (modern Python syntax)
+    "SIM",  # flake8-simplify
+    "RET",  # flake8-return
+]
+ignore = [
+    "E501",   # line too long — handled by formatter, not enforced here
+    "B008",   # do not perform function calls in default args (FastAPI Depends pattern)
+    "B904",   # raise from exc — will enforce after initial cleanup
+    "SIM108", # ternary operator — not always more readable
+    "RET504", # unnecessary assignment before return — readability preference
+    "UP007",  # X | Y union syntax — keep Optional[X] for now (readability)
+]
+
+# Files to exclude
+exclude = [
+    "scripts/",       # one-off scripts, print() allowed
+    "tests/",         # test files have different conventions
+    "migrations/",    # raw SQL migration files
+    "*.db",
+]
+
+[lint.per-file-ignores]
+# Allow print() in scripts
+"scripts/*.py" = ["T20"]
+# Allow broader patterns in tests
+"tests/**/*.py" = ["T20", "B", "SIM", "F841"]
+# Allow Any in ADK type stubs
+"adk_core/schemas/*.py" = ["UP"]
+# tenant_guard.py has print() only in __main__ block (CLI testing tool)
+"modules/tenant_guard.py" = ["T20"]

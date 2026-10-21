@@ -1,0 +1,6 @@
+# CI-only: historical migrations whose CREATE INDEX CONCURRENTLY the Supabase CLI can't run
+# (SQLSTATE 25001, "cannot be executed within a pipeline"). migrations.yml rewrites the
+# runner copy to a plain CREATE INDEX, which is equivalent on an empty DB. The committed file
+# is never edited (forward-fix policy). Don't add NEW migrations here: they must avoid
+# CONCURRENTLY, because `supabase db push` would fail the same way on staging/prod.
+20260607000000_pg_trgm.sql

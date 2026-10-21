@@ -1,0 +1,83 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+*.tsbuildinfo
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.turbo/
+app/*/dist/
+app/*/out/
+app/desktop/release/
+packages/*/dist/
+packages/*/storybook-static/
+
+# Environment
+.env
+.env.*
+.supabase-project-ref
+
+# Docker
+*.tar
+
+# Local test artifacts
+test-recording*.mp4
+test-recording*.json
+
+# Supabase local CLI state
+supabase/.branches/
+supabase/.temp/
+
+# Editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Test artifacts
+.pytest_cache/
+playwright-report/
+playwright-test-results/
+test-results-temp/
+.tmp-playwright-server.*
+.gitnexus
+.gstack/
+
+
+.claude
+scripts/_migration_audit.sql
+.superpowers/
+
+# --- Local dev artifacts / QA debris (2026-06-18 cleanup) ---
+*.log
+*-bak
+.recall-verify-baseline.json
+/output/
+.playwright-mcp/
+/screenshots/
+# Root-level QA screenshots & images (committed images live in subdirs, e.g. frontend/public/)
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp
+
+# --- Recurring untracked tool/agent cruft (2026-07-03 repo hygiene sweep, task 0.13) ---
+.agents/
+.claude-flow/
+.impeccable/
+.swarm/
+.github/hooks/
+.github/skills/
+*.local-bak
+
+# Git worktrees (agent isolation)
+.worktrees/
+

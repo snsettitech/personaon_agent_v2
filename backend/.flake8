@@ -1,0 +1,29 @@
+[flake8]
+# Exclude virtual environments and other directories
+exclude =
+    .venv,
+    venv,
+    env,
+    __pycache__,
+    .git,
+    .eggs,
+    *.egg,
+    build,
+    dist,
+    .pytest_cache,
+    .mypy_cache,
+    .tox
+
+# Maximum line length
+max-line-length = 127
+
+# Ignore specific errors (warnings only, not syntax errors)
+ignore = E501,W503,E203
+
+# Select only critical errors for CI
+# E9 = Runtime errors (indentation issues)
+# F63 = print statements used
+# F7 = syntax errors  
+# F82 = undefined names
+select = E9,F63,F7,F82
+

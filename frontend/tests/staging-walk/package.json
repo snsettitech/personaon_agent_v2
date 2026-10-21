@@ -1,0 +1,11 @@
+{
+  "name": "personaon-staging-walk",
+  "private": true,
+  "description": "Post-deploy browser walk of public staging routes. Run from smoke-test.yml; see staging-walk.spec.ts.",
+  "scripts": {
+    "walk": "playwright test --config playwright.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.0"
+  }
+}

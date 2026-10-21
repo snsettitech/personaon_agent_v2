@@ -1,0 +1,9 @@
+# Heavy local Hugging Face embedding dependencies.
+#
+# Use this only when you explicitly need local sentence-transformers inference.
+# On small Render plans, this can significantly increase build time and memory pressure.
+
+-r requirements-ml.txt
+
+sentence-transformers>=3.0.0
+huggingface-hub>=0.24.0

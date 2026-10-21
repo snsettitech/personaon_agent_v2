@@ -1,0 +1,1 @@
+Sample knowledge source for E2E upload modal checks.

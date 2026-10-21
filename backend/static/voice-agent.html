@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1280, height=720">
+  <title>Twin Voice Agent</title>
+  <style>
+    /* === SECTION A: Visual Design (1280x720) === */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 1280px;
+      height: 720px;
+      overflow: hidden;
+      background: #1a1a2e;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #ffffff;
+    }
+
+    .avatar-container {
+      position: relative;
+      width: 148px;
+      height: 148px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+
+    .avatar-ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 2px solid #0D9488;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .avatar-ring.speaking {
+      opacity: 1;
+      animation: pulse-ring 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse-ring {
+      0%   { transform: scale(1.0); opacity: 1; }
+      50%  { transform: scale(1.15); opacity: 0.6; }
+      100% { transform: scale(1.0); opacity: 1; }
+    }
+
+    .avatar {
+      width: 128px;
+      height: 128px;
+      border-radius: 50%;
+      background: #0D9488;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+      font-weight: 600;
+      color: #ffffff;
+      overflow: hidden;
+      z-index: 1;
+    }
+
+    .avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .twin-name {
+      font-size: 24px;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+
+    .status-text {
+      font-size: 18px;
+      color: #ffffff;
+      transition: color 0.3s;
+    }
+
+    .status-text.thinking { color: #f59e0b; }
+    .status-text.speaking { color: #22c55e; }
+    .status-text.listening { color: #ffffff; }
+    .status-text.reconnecting { color: #ef4444; }
+
+    .caption-overlay {
+      position: absolute;
+      bottom: 80px;
+      left: 80px;
+      right: 80px;
+      text-align: center;
+      opacity: 0;
+      transition: opacity 0.5s;
+    }
+
+    .caption-overlay.visible {
+      opacity: 1;
+    }
+
+    .caption-text {
+      display: inline-block;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 16px;
+      line-height: 1.5;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: pre-wrap;
+      /* max 2 lines */
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    .connection-status {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      font-size: 12px;
+      color: rgba(255,255,255,0.4);
+    }
+  </style>
+</head>
+<body>
+  <div class="connection-status" id="connectionStatus"></div>
+
+  <div class="avatar-container">
+    <div class="avatar-ring" id="avatarRing"></div>
+    <div class="avatar" id="avatar"></div>
+  </div>
+
+  <div class="twin-name" id="twinName">AI Assistant</div>
+  <div class="status-text listening" id="statusText">Listening...</div>
+
+  <div class="caption-overlay" id="captionOverlay">
+    <div class="caption-text" id="captionText"></div>
+  </div>
+
+  <script>
+    /* === Configuration from query params === */
+    const params = new URLSearchParams(window.location.search);
+    const TWIN_ID = params.get('twin_id') || '';
+    const MEETING_ID = params.get('meeting_id') || '';
+    const API_KEY_TOKEN = params.get('api_key_token') || '';
+
+    /* Determine backend host */
+    const BACKEND_HOST = (function() {
+      const h = window.location.hostname;
+      if (h === 'localhost' || h === '127.0.0.1') {
+        return 'localhost:8006';
+      }
+      return h;
+    })();
+    const BACKEND_WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const BACKEND_BASE_URL = window.location.protocol + '//' + BACKEND_HOST;
+
+    console.log('[VoiceAgent] twin_id=' + TWIN_ID + ' meeting_id=' + MEETING_ID);
+
+    /* === DOM References === */
+    const avatarEl = document.getElementById('avatar');
+    const avatarRingEl = document.getElementById('avatarRing');
+    const twinNameEl = document.getElementById('twinName');
+    const statusTextEl = document.getElementById('statusText');
+    const captionOverlayEl = document.getElementById('captionOverlay');
+    const captionTextEl = document.getElementById('captionText');
+    const connectionStatusEl = document.getElementById('connectionStatus');
+
+    /* === State === */
+    let twinConfig = null;
+    let introPlayed = false;
+    let captionTimeout = null;
+
+    /* === Avatar + Twin Info Loading === */
+    async function loadTwinInfo() {
+      try {
+        const avatarUrl = BACKEND_BASE_URL + '/api/twin-avatar/' + TWIN_ID;
+        const img = new Image();
+        img.onload = function() {
+          avatarEl.innerHTML = '';
+          avatarEl.appendChild(img);
+        };
+        img.onerror = function() {
+          /* Fallback to initials */
+          const name = twinNameEl.textContent || 'AI';
+          avatarEl.textContent = name.split(' ').map(function(w) { return w[0]; }).join('').toUpperCase().slice(0, 2);
+        };
+        img.src = avatarUrl;
+      } catch (err) {
+        console.error('[VoiceAgent] failed to load avatar:', err);
+      }
+    }
+
+    /* === Status Management === */
+    function setStatus(status) {
+      statusTextEl.className = 'status-text ' + status;
+      var labels = {
+        listening: 'Listening...',
+        thinking: 'Thinking...',
+        speaking: 'Speaking...',
+        reconnecting: 'Reconnecting...'
+      };
+      statusTextEl.textContent = labels[status] || status;
+
+      if (status === 'speaking') {
+        avatarRingEl.classList.add('speaking');
+      } else {
+        avatarRingEl.classList.remove('speaking');
+      }
+    }
+
+    function showCaption(text) {
+      if (captionTimeout) clearTimeout(captionTimeout);
+      /* Limit to ~2 lines */
+      captionTextEl.textContent = text.length > 200 ? text.slice(0, 197) + '...' : text;
+      captionOverlayEl.classList.add('visible');
+      captionTimeout = setTimeout(function() {
+        captionOverlayEl.classList.remove('visible');
+      }, 5000);
+    }
+
+    /* ====================================================
+       SECTION B: Recall.ai Transcript WebSocket + TriggerDetector
+       ==================================================== */
+
+    class TriggerDetector {
+      constructor(twinName, expertiseKeywords) {
+        this.twinName = twinName.toLowerCase();
+        this.nameVariants = this._generateVariants(twinName);
+        this.keywords = expertiseKeywords.map(function(k) { return k.toLowerCase(); });
+        this.inMultiTurn = false;
+        this.lastResponseTime = 0;
+        this.MULTI_TURN_WINDOW_MS = 30000; /* 30 seconds */
+      }
+
+      shouldRespond(text, timestamp) {
+        var lower = text.toLowerCase();
+
+        /* Multi-turn continuation */
+        if (this.inMultiTurn && (timestamp - this.lastResponseTime) < this.MULTI_TURN_WINDOW_MS) {
+          if (this._isFollowup(lower)) return true;
+        }
+
+        /* Direct name mention — twin's own name or generic invitations */
+        if (this.nameVariants.some(function(v) { return v && lower.includes(v); })) return true;
+        if (lower.includes('ai assistant') || lower.includes('digital twin')) return true;
+
+        /* Group-addressed invitation — "anyone", "team", "you guys" + question */
+        var invites = ['anyone', 'everyone', 'team', 'folks', 'you guys', 'does anybody'];
+        if (this._isQuestion(lower) && invites.some(function(i) { return lower.includes(i); })) return true;
+
+        /* Question + keyword match (only when keywords are configured) */
+        if (this.keywords.length > 0 && this._isQuestion(lower)
+            && this.keywords.some(function(k) { return lower.includes(k); })) {
+          return true;
+        }
+
+        return false;
+      }
+
+      markResponseSent() {
+        this.inMultiTurn = true;
+        this.lastResponseTime = Date.now();
+      }
+
+      _generateVariants(name) {
+        var parts = name.toLowerCase().split(' ');
+        var variants = [name.toLowerCase()];
+        if (parts.length > 1) variants.push(parts[0]); /* first name */
+        return variants;
+      }
+
+      _isQuestion(text) {
+        return text.includes('?') || /^(what|how|why|when|where|who|can|could|would|do|does|is|are|tell)\b/.test(text.trim());
+      }
+
+      _isFollowup(text) {
+        var patterns = [
+          'elaborate', 'tell me more', 'what about', 'can you explain',
+          'go on', 'more detail', 'expand on', 'what do you mean',
+          'really?', 'how so'
+        ];
+        return patterns.some(function(p) { return text.includes(p); });
+      }
+    }
+
+    /* Default trigger detector (will be updated when twin config loads) */
+    let triggerDetector = new TriggerDetector('Assistant', []);
+
+    /* Transcripts arrive via the backend WebSocket as type='speaker_transcript'
+       events — forwarded from Recall.ai's realtime webhook. We do trigger
+       detection here and only echo back type='transcript' when triggered. */
+
+    function handleSpeakerTranscript(text, speaker) {
+      if (!text || !text.trim()) return;
+
+      /* Vocal introduction on first speech detected */
+      if (!introPlayed && backendWs && backendWs.readyState === WebSocket.OPEN) {
+        introPlayed = true;
+        backendWs.send(JSON.stringify({
+          type: 'intro',
+          twin_id: TWIN_ID
+        }));
+      }
+
+      /* Trigger detection — only respond when addressed or on-topic question */
+      var now = Date.now();
+      if (triggerDetector.shouldRespond(text, now)) {
+        console.log('[VoiceAgent] trigger detected: "' + text.slice(0, 80) + '"');
+        sendToBackend(text, speaker);
+      }
+    }
+
+    /* ====================================================
+       SECTION C: Backend WebSocket + Web Audio API Pipeline
+       ==================================================== */
+
+    /* --- Backend WebSocket --- */
+    let backendWs = null;
+    let backendReconnectDelay = 1000;
+
+    function connectBackendWebSocket() {
+      var url = BACKEND_WS_PROTOCOL + '//' + BACKEND_HOST + '/ws/voice-agent/' + MEETING_ID + '?twin_id=' + encodeURIComponent(TWIN_ID);
+      if (API_KEY_TOKEN) {
+        url += '&api_key_token=' + encodeURIComponent(API_KEY_TOKEN);
+      }
+      console.log('[VoiceAgent] connecting to backend WebSocket');
+
+      backendWs = new WebSocket(url);
+
+      backendWs.onopen = function() {
+        console.log('[VoiceAgent] backend WebSocket connected');
+        backendReconnectDelay = 1000;
+      };
+
+      backendWs.onmessage = function(event) {
+        try {
+          var msg = JSON.parse(event.data);
+          handleBackendMessage(msg);
+        } catch (err) {
+          console.error('[VoiceAgent] backend message parse error:', err);
+        }
+      };
+
+      backendWs.onerror = function(err) {
+        console.error('[VoiceAgent] backend WebSocket error:', err);
+      };
+
+      backendWs.onclose = function() {
+        console.log('[VoiceAgent] backend WebSocket closed, reconnecting in ' + backendReconnectDelay + 'ms');
+        setTimeout(connectBackendWebSocket, backendReconnectDelay);
+        backendReconnectDelay = Math.min(backendReconnectDelay * 2, 10000);
+      };
+    }
+
+    function sendToBackend(text, speaker) {
+      if (!backendWs || backendWs.readyState !== WebSocket.OPEN) {
+        console.error('[VoiceAgent] backend WebSocket not connected, cannot send transcript');
+        return;
+      }
+      backendWs.send(JSON.stringify({
+        type: 'transcript',
+        text: text,
+        speaker: speaker
+      }));
+      setStatus('thinking');
+    }
+
+    function handleBackendMessage(msg) {
+      switch (msg.type) {
+        case 'audio':
+          playAudioChunk(msg.audio_b64);
+          break;
+
+        case 'status':
+          setStatus(msg.status || 'listening');
+          break;
+
+        case 'twin_response':
+          showCaption(msg.response || '');
+          triggerDetector.markResponseSent();
+          break;
+
+        case 'speaker_transcript':
+          /* Forwarded from Recall.ai transcript webhook via backend */
+          handleSpeakerTranscript(msg.text || '', msg.speaker || 'Unknown');
+          break;
+
+        case 'twin_config':
+          /* Backend sends twin info so we can configure the trigger detector */
+          twinConfig = msg;
+          if (msg.twin_name) {
+            twinNameEl.textContent = msg.twin_name + "'s AI Assistant";
+            triggerDetector = new TriggerDetector(
+              msg.twin_name,
+              msg.expertise_keywords || []
+            );
+          }
+          break;
+
+        default:
+          console.log('[VoiceAgent] unknown message type:', msg.type);
+      }
+    }
+
+    /* --- Web Audio API Pipeline --- */
+    let audioCtx = null;
+    let audioQueue = [];
+    let isPlaying = false;
+
+    function initAudio() {
+      try {
+        audioCtx = new AudioContext({ sampleRate: 24000 });
+        console.log('[VoiceAgent] AudioContext created at 24000Hz');
+      } catch (err) {
+        console.error('[VoiceAgent] failed to create AudioContext:', err);
+      }
+    }
+
+    function playAudioChunk(base64Pcm) {
+      if (!audioCtx) {
+        console.error('[VoiceAgent] AudioContext not initialized');
+        return;
+      }
+
+      try {
+        var raw = atob(base64Pcm);
+        var buffer = new ArrayBuffer(raw.length);
+        var view = new Uint8Array(buffer);
+        for (var i = 0; i < raw.length; i++) {
+          view[i] = raw.charCodeAt(i);
+        }
+
+        /* PCM 24000Hz 16-bit mono */
+        var int16 = new Int16Array(buffer);
+        var float32 = new Float32Array(int16.length);
+        for (var j = 0; j < int16.length; j++) {
+          float32[j] = int16[j] / 32768;
+        }
+
+        var audioBuffer = audioCtx.createBuffer(1, float32.length, 24000);
+        audioBuffer.getChannelData(0).set(float32);
+        audioQueue.push(audioBuffer);
+
+        if (!isPlaying) playNextChunk();
+      } catch (err) {
+        console.error('[VoiceAgent] audio playback error, skipping chunk:', err);
+      }
+    }
+
+    function playNextChunk() {
+      if (audioQueue.length === 0) {
+        isPlaying = false;
+        /* Return to listening after audio finishes */
+        setStatus('listening');
+        return;
+      }
+      isPlaying = true;
+      setStatus('speaking');
+
+      var buffer = audioQueue.shift();
+      var source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioCtx.destination);
+      source.onended = playNextChunk;
+      source.start();
+    }
+
+    /* ====================================================
+       SECTION D: Initialization + Vocal Introduction
+       ==================================================== */
+
+    function init() {
+      console.log('[VoiceAgent] initializing voice agent page');
+
+      /* Set up initial avatar as initials placeholder */
+      avatarEl.textContent = 'AI';
+      setStatus('listening');
+
+      /* Load twin avatar */
+      loadTwinInfo();
+
+      /* Initialize Web Audio API */
+      initAudio();
+
+      /* Connect to backend WebSocket — receives twin_config, speaker_transcript,
+         audio chunks, and status messages. Transcripts arrive here (forwarded
+         from the Recall.ai realtime webhook) instead of connecting to Recall
+         directly. */
+      connectBackendWebSocket();
+
+      /* Auto-resume AudioContext on any document interaction. Recall.ai's
+         Output Media page has no user gesture, so we try immediately and
+         retry on the first focus/visibility change. */
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(function() {});
+      }
+    }
+
+    /* Start everything when page loads */
+    window.addEventListener('load', init);
+  </script>
+</body>
+</html>

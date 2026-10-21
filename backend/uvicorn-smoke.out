@@ -1,0 +1,10 @@
+[STARTUP ERROR] Missing required env vars: ['JWT_SECRET']
+[PersonaOn] API starting
+[PersonaOn] ADK_CHAT_MODEL     = gemini-2.5-flash
+[PersonaOn] ADK_RESEARCH_MODEL = gemini-2.5-flash
+[PersonaOn] ADK_COMPILER_MODEL = gemini-2.5-flash
+[PersonaOn] INFERENCE_PROVIDER = gemini
+[PersonaOn] PINECONE_INDEX_MODE= integrated
+[Pinecone] Initializing index by name (mode=integrated, host_override=false, index=digitalminds)
+[PersonaOn] GET /health -> 200 (1.422s)
+INFO:     127.0.0.1:58674 - "GET /health HTTP/1.1" 200 OK

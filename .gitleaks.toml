@@ -1,0 +1,77 @@
+# gitleaks config for .github/workflows/security-scans.yml (pilot step B4).
+#
+# Extends the built-in rules and only allowlists things that are public or
+# obviously fake. Provider rules (Stripe live keys, AWS, GCP, etc.) stay active
+# everywhere, including tests, docs and *.example files; the looser allowlists
+# below only apply to the noisy catch-all rules.
+#
+# Per-rule allowlists use a [[rules]] block with a default rule's id: that only
+# adds to the rule, its regex and keywords come from the defaults. (Top-level
+# allowlists with targetRules don't attach to extended default rules in 8.28.)
+
+title = "PersonaOn gitleaks config"
+
+[extend]
+useDefault = true
+
+# Placeholder values anywhere (sk_test_placeholder, your-api-key, etc.).
+[[allowlists]]
+description = "Obvious placeholders"
+regexes = [
+  '''(?i)(placeholder|dummy|fake|example|changeme|redacted|xxxxxx|your[_-])''',
+]
+
+# --- extra rules ----------------------------------------------------------------
+
+[[rules]]
+id = "supabase-secret-key"
+description = "Supabase secret API key"
+regex = '''\bsb_secret_[A-Za-z0-9_-]{20,}'''
+keywords = ["sb_secret_"]
+
+# JWT whose payload contains "service_role" (base64url at all three alignments).
+[[rules]]
+id = "supabase-service-role-jwt"
+description = "Supabase service_role JWT"
+regex = '''\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*(?:c2VydmljZV9yb2xl|NlcnZpY2Vfcm9sZ|zZXJ2aWNlX3JvbG)[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{10,}'''
+keywords = ["eyj"]
+
+# --- per-rule allowlists ----------------------------------------------------------
+
+# Supabase anon keys are public (RLS is the boundary). Exempt only JWTs whose
+# payload has "role":"anon" (base64url at all three alignments), so a
+# service_role JWT is never exempt whatever the variable is called.
+[[rules]]
+id = "jwt"
+[[rules.allowlists]]
+regexes = ['''(?:InJvbGUiOiJhbm9uI|Jyb2xlIjoiYW5vbi|icm9sZSI6ImFub24i)''']
+
+# The catch-all rule fires on ids like key_id="key-1", on prose in tests and
+# docs, and on browser-exposed values (NEXT_PUBLIC_*, Stripe pk_ keys).
+# Provider-specific rules still run on all of these.
+[[rules]]
+id = "generic-api-key"
+[[rules.allowlists]]
+paths = [
+  '''(^|/)tests?/''',
+  '''(^|/)__tests__/''',
+  '''(^|/)test_[^/]+\.py$''',
+  '''\.(test|spec)\.[jt]sx?$''',
+  '''\.(md|mdx)$''',
+]
+[[rules.allowlists]]
+regexTarget = "line"
+regexes = [
+  '''NEXT_PUBLIC_[A-Z0-9_]+''',
+  '''\bpk_(test|live)_[A-Za-z0-9]+''',
+]
+
+# Matches variable names like linkedinProfile, not secrets.
+[[rules]]
+id = "linkedin-client-secret"
+[[rules.allowlists]]
+regexTarget = "line"
+regexes = [
+  '''(?i)linked[_-]?in\w*\s*(\?\?|:\s*linked)''',
+  '''(?i)linked[_-]?in\w*\s*\|\s*null''',
+]
